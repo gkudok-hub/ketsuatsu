@@ -1,0 +1,580 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>血圧手帳</title>
+<meta name="theme-color" content="#1f3a5c">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-180.png">
+<script src="chart.umd.min.js"></script>
+<style>
+:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+body{margin:0}
+[hidden]{display:none!important}
+/* Layout: one narrow column, phone-first. 入力 → カレンダー → グラフ の順に縦積み。 */
+:root{
+  --bg:#f3f5f7; --surface:#ffffff; --line:#dde2e8; --ink:#1b2430; --muted:#5d6876;
+  --sys:#c8423b; --dia:#2a6cb3; --pulse:#7a8a3a; --accent:#1f3a5c; --accent-ink:#ffffff;
+  --am:#e9a23b; --pm:#5a5fa8;
+  --ok:#2f8a5b; --warn1:#a38a12; --warn2:#d07a1e; --bad:#c8423b;
+  --ok-bg:#e3f3ea; --warn1-bg:#f6f0d2; --warn2-bg:#fbe9d6; --bad-bg:#f9e1df;
+  --today:#eef3fa;
+  --f-body:"Noto Sans JP","Noto Sans CJK JP","Hiragino Sans","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+  --f-num:"Roboto","Segoe UI",system-ui,sans-serif;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#12161c; --surface:#1b2129; --line:#2c3440; --ink:#e6ebf1; --muted:#9aa5b3;
+  --sys:#f0756b; --dia:#6aa6ec; --pulse:#b5c46a; --accent:#8fb4e0; --accent-ink:#0f1620;
+  --am:#f0b75c; --pm:#9a9ff0;
+  --ok:#5fc68f; --warn1:#d8c14e; --warn2:#f0a45a; --bad:#f0756b;
+  --ok-bg:#1c3328; --warn1-bg:#33301a; --warn2-bg:#3a2a18; --bad-bg:#3d2220;
+  --today:#1f2a38; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#12161c; --surface:#1b2129; --line:#2c3440; --ink:#e6ebf1; --muted:#9aa5b3;
+  --sys:#f0756b; --dia:#6aa6ec; --pulse:#b5c46a; --accent:#8fb4e0; --accent-ink:#0f1620;
+  --am:#f0b75c; --pm:#9a9ff0;
+  --ok:#5fc68f; --warn1:#d8c14e; --warn2:#f0a45a; --bad:#f0756b;
+  --ok-bg:#1c3328; --warn1-bg:#33301a; --warn2-bg:#3a2a18; --bad-bg:#3d2220;
+  --today:#1f2a38; color-scheme:dark}
+
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.6}
+.wrap{max-width:720px;margin:0 auto;padding-block:20px 48px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  display:flex;flex-direction:column;gap:20px}
+header{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap}
+h1{font-size:1.45rem;margin:0;letter-spacing:.02em;text-wrap:balance}
+h2{font-size:1.05rem;margin:0;text-wrap:balance}
+.sub{color:var(--muted);font-size:.82rem}
+.status{font-size:.8rem;color:var(--muted)}
+.status.err{color:var(--bad)}
+.num{font-family:var(--f-num);font-variant-numeric:tabular-nums}
+
+section.panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:14px;min-width:0}
+.panel-head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+
+/* form */
+form{display:flex;flex-direction:column;gap:14px}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.row3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+label{display:flex;flex-direction:column;gap:4px;font-size:.8rem;color:var(--muted);min-width:0}
+label b{font-weight:500;color:var(--ink);font-size:.85rem}
+input{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px 10px;width:100%;min-width:0}
+input.big{font-family:var(--f-num);font-size:1.5rem;font-weight:600;padding:8px 10px;text-align:center}
+input.big.sys{color:var(--sys)} input.big.dia{color:var(--dia)} input.big.pul{color:var(--pulse)}
+input:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.unit{font-family:var(--f-num);font-size:.72rem;color:var(--muted);text-align:center}
+.seg{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{flex:1;border:0;background:transparent;color:var(--muted);font:inherit;font-size:.85rem;padding:8px 6px;cursor:pointer}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink);font-weight:500}
+.form-foot{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.btn{font:inherit;border-radius:8px;padding:10px 18px;cursor:pointer;border:1px solid var(--line);background:var(--surface);color:var(--ink)}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:700;padding:11px 26px}
+.btn.small{padding:5px 12px;font-size:.82rem}
+.btn.danger{color:var(--bad);border-color:var(--bad)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.msg{font-size:.85rem;color:var(--muted)}
+.msg.ok{color:var(--ok)} .msg.err{color:var(--bad)}
+
+/* summary */
+.avg{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.avg-card{border:1px solid var(--line);border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;gap:2px;min-width:0}
+.avg-card .k{font-size:.78rem;color:var(--muted);display:flex;align-items:center;gap:6px}
+.avg-card .v{font-family:var(--f-num);font-size:1.35rem;font-weight:600;font-variant-numeric:tabular-nums}
+.avg-card .v .s{color:var(--sys)} .avg-card .v .d{color:var(--dia)}
+.avg-card .p{font-size:.75rem;color:var(--muted)}
+.dot{width:8px;height:8px;border-radius:50%;display:inline-block;flex:none}
+.dot.am{background:var(--am)} .dot.pm{background:var(--pm)}
+.pill{display:inline-block;font-size:.72rem;padding:1px 8px;border-radius:999px;font-weight:500;width:fit-content}
+.c0{background:var(--ok-bg);color:var(--ok)} .c1{background:var(--warn1-bg);color:var(--warn1)}
+.c2{background:var(--warn2-bg);color:var(--warn2)} .c3{background:var(--bad-bg);color:var(--bad)}
+
+/* calendar */
+.cal-nav{display:flex;align-items:center;gap:8px}
+.cal-nav .m{font-weight:700;min-width:7.5em;text-align:center;font-variant-numeric:tabular-nums}
+.icon-btn{border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:8px;width:34px;height:34px;cursor:pointer;font-size:1rem;line-height:1}
+.cal{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:3px}
+.cal .wd{font-size:.72rem;text-align:center;color:var(--muted);padding-bottom:2px}
+.cal .wd.sun{color:var(--sys)} .cal .wd.sat{color:var(--dia)}
+.day{border:1px solid var(--line);border-radius:6px;min-height:64px;padding:3px 3px 4px;display:flex;flex-direction:column;gap:1px;cursor:pointer;background:var(--surface);color:var(--ink);font:inherit;text-align:left;min-width:0}
+.day.out{visibility:hidden}
+.day.today{background:var(--today);border-color:var(--accent)}
+.day.sel{outline:2px solid var(--accent);outline-offset:-1px}
+.day .dn{font-size:.72rem;font-family:var(--f-num);color:var(--muted)}
+.day .dn.sun{color:var(--sys)} .day .dn.sat{color:var(--dia)}
+.day .r{font-family:var(--f-num);font-size:.66rem;line-height:1.25;display:flex;align-items:center;gap:2px;white-space:nowrap;overflow:hidden;font-variant-numeric:tabular-nums}
+.day .r .dot{width:5px;height:5px}
+.day .r .s{color:var(--sys)} .day .r .d{color:var(--dia)}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:.76rem;color:var(--muted);align-items:center}
+.legend span{display:inline-flex;align-items:center;gap:5px}
+
+.detail{border-top:1px dashed var(--line);padding-top:12px;display:flex;flex-direction:column;gap:10px}
+.detail-head{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+.rec{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:10px;border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+.rec .t{font-size:.8rem;color:var(--muted);display:flex;align-items:center;gap:6px;white-space:nowrap}
+.rec .vals{font-family:var(--f-num);font-variant-numeric:tabular-nums;display:flex;flex-wrap:wrap;gap:4px 12px;align-items:baseline;min-width:0}
+.rec .vals .s{color:var(--sys);font-weight:600;font-size:1.1rem} .rec .vals .d{color:var(--dia);font-weight:600;font-size:1.1rem}
+.rec .vals .p{color:var(--muted);font-size:.85rem}
+.rec .acts{display:flex;gap:6px}
+.empty-line{font-size:.85rem;color:var(--muted)}
+
+/* chart */
+.chart-box{position:relative;height:300px;min-width:0}
+.chart-empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;color:var(--muted);font-size:.88rem;padding:20px}
+.ctrls{display:flex;gap:10px;flex-wrap:wrap}
+.ctrls .seg{flex:1 1 auto}
+.ctrls .seg button{padding:6px 8px;font-size:.8rem;white-space:nowrap}
+
+.note{font-size:.76rem;color:var(--muted);line-height:1.7}
+.note table{border-collapse:collapse;margin-top:6px;font-size:.76rem}
+.note td{padding:2px 10px 2px 0}
+
+@media (max-width:420px){
+  .row3{gap:6px}
+  input.big{font-size:1.3rem;padding:8px 4px}
+  .day{min-height:58px;padding:2px}
+  .day .r{font-size:.6rem;letter-spacing:-.02em}
+  .day .r .dot{display:none}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+
+<div class="wrap">
+  <header>
+    <div>
+      <h1>朝晩の血圧手帳</h1>
+      <div class="sub">家庭血圧を毎日 朝・晩 の2回記録</div>
+    </div>
+    <div class="status" id="status"></div>
+  </header>
+
+  <!-- 入力 -->
+  <section class="panel" aria-labelledby="h-form">
+    <div class="panel-head"><h2 id="h-form">測定結果を記録</h2><span class="sub" id="edit-hint"></span></div>
+    <form id="form" novalidate>
+      <div class="row">
+        <label for="f-date"><b>測定日</b><input type="date" id="f-date" required></label>
+        <label for="f-time"><b>時刻</b><input type="time" id="f-time" required></label>
+      </div>
+      <div class="seg" role="group" aria-label="朝か晩か">
+        <button type="button" id="slot-am" aria-pressed="true">朝（起床後）</button>
+        <button type="button" id="slot-pm" aria-pressed="false">晩（就寝前）</button>
+      </div>
+      <div class="row3">
+        <label for="f-sys"><b>上の血圧</b><input class="big sys" type="number" inputmode="numeric" id="f-sys" min="50" max="260" placeholder="—"><span class="unit">mmHg</span></label>
+        <label for="f-dia"><b>下の血圧</b><input class="big dia" type="number" inputmode="numeric" id="f-dia" min="30" max="180" placeholder="—"><span class="unit">mmHg</span></label>
+        <label for="f-pul"><b>脈拍</b><input class="big pul" type="number" inputmode="numeric" id="f-pul" min="30" max="200" placeholder="—"><span class="unit">拍/分</span></label>
+      </div>
+      <div class="form-foot">
+        <button class="btn primary" type="submit" id="save">記録する</button>
+        <button class="btn" type="button" id="reset" hidden>新規入力に戻す</button>
+        <span class="msg" id="msg" role="status"></span>
+      </div>
+    </form>
+  </section>
+
+  <!-- 平均 -->
+  <section class="panel" aria-labelledby="h-avg">
+    <div class="panel-head"><h2 id="h-avg">直近7日の平均</h2><span class="sub">家庭血圧は朝・晩それぞれの平均で見ます</span></div>
+    <div class="avg" id="avg"></div>
+  </section>
+
+  <!-- カレンダー -->
+  <section class="panel" aria-labelledby="h-cal">
+    <div class="panel-head">
+      <h2 id="h-cal">カレンダー</h2>
+      <div class="cal-nav">
+        <button class="icon-btn" id="prev" aria-label="前の月">‹</button>
+        <span class="m num" id="month-label"></span>
+        <button class="icon-btn" id="next" aria-label="次の月">›</button>
+        <button class="btn small" id="this-month">今月</button>
+      </div>
+    </div>
+    <div class="legend">
+      <span><i class="dot am"></i>朝</span><span><i class="dot pm"></i>晩</span>
+      <span class="num"><b style="color:var(--sys)">上</b>/<b style="color:var(--dia)">下</b></span>
+      <span>日付をタップで詳細</span>
+    </div>
+    <div class="cal" id="cal"></div>
+    <div class="detail" id="detail"></div>
+  </section>
+
+  <!-- グラフ -->
+  <section class="panel" aria-labelledby="h-chart">
+    <div class="panel-head"><h2 id="h-chart">血圧の推移</h2></div>
+    <div class="ctrls">
+      <div class="seg" role="group" aria-label="期間" id="range">
+        <button type="button" data-v="14" aria-pressed="true">2週間</button>
+        <button type="button" data-v="30" aria-pressed="false">1か月</button>
+        <button type="button" data-v="90" aria-pressed="false">3か月</button>
+        <button type="button" data-v="0" aria-pressed="false">全期間</button>
+      </div>
+      <div class="seg" role="group" aria-label="朝晩" id="which">
+        <button type="button" data-v="both" aria-pressed="true">朝晩</button>
+        <button type="button" data-v="am" aria-pressed="false">朝のみ</button>
+        <button type="button" data-v="pm" aria-pressed="false">晩のみ</button>
+      </div>
+    </div>
+    <div class="chart-box">
+      <canvas id="chart" aria-label="血圧の折れ線グラフ"></canvas>
+      <div class="chart-empty" id="chart-empty">記録するとここに上・下の血圧の折れ線が表示されます。<br>破線は家庭血圧の高血圧基準（135／85）です。</div>
+    </div>
+    <div class="sub">凡例をタップすると脈拍の表示・非表示を切り替えられます。</div>
+  </section>
+
+  <!-- バックアップ -->
+  <section class="panel" aria-labelledby="h-bk">
+    <div class="panel-head"><h2 id="h-bk">バックアップ（CSV）</h2></div>
+    <div class="sub">記録はこのスマホの中だけに保存されます。アプリを削除したり機種変更したりすると消えるので、ときどきCSVに書き出してGoogleドライブなどに保存してください。CSVは医師に見せるときにも使えます。</div>
+    <div class="form-foot">
+      <button class="btn" type="button" id="exp">CSVを書き出す</button>
+      <button class="btn" type="button" id="share" hidden>CSVを共有</button>
+      <button class="btn" type="button" id="imp">CSVを読み込む</button>
+      <input type="file" id="imp-file" accept=".csv,text/csv,text/plain" hidden>
+    </div>
+    <div id="imp-confirm" class="form-foot" hidden>
+      <span class="msg" id="imp-text"></span>
+      <button class="btn small primary" type="button" id="imp-yes">取り込む</button>
+      <button class="btn small" type="button" id="imp-no">やめる</button>
+    </div>
+    <span class="msg" id="bk-msg" role="status"></span>
+  </section>
+
+  <div class="note">
+    分類は日本高血圧学会（JSH2019）の家庭血圧の目安です。診断や治療の判断は医師に相談してください。
+    <table>
+      <tr><td><span class="pill c0">正常血圧</span></td><td class="num">上 &lt;115 かつ 下 &lt;75</td></tr>
+      <tr><td><span class="pill c1">正常高値</span></td><td class="num">上 115–124 かつ 下 &lt;75</td></tr>
+      <tr><td><span class="pill c2">高値血圧</span></td><td class="num">上 125–134 または 下 75–84</td></tr>
+      <tr><td><span class="pill c3">高血圧</span></td><td class="num">上 ≥135 または 下 ≥85</td></tr>
+    </table>
+  </div>
+</div>
+
+<script>
+(function(){
+  const $ = id => document.getElementById(id);
+  const pad = n => String(n).padStart(2,'0');
+  const ymd = d => d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
+  const WD = ['日','月','火','水','木','金','土'];
+  const SLOT = {am:'朝', pm:'晩'};
+  const CLS = ['正常血圧','正常高値','高値血圧','高血圧'];
+  function classify(s,d){
+    if(s>=135||d>=85) return 3;
+    if(s>=125||d>=75) return 2;
+    if(s>=115) return 1;
+    return 0;
+  }
+  const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+  let db=null, col=null, readings=[]; // {id,date,time,slot,sys,dia,pulse}
+  let byKey = new Map();
+  let canWrite = true;
+  let slot = 'am';
+  let editingId = null;
+  const now = new Date();
+  let viewY = now.getFullYear(), viewM = now.getMonth();
+  let selDate = ymd(now);
+  let range = 14, which = 'both';
+  let chart = null, rs_ref = [];
+
+  /* ---------- form ---------- */
+  function setSlot(s){
+    slot=s;
+    $('slot-am').setAttribute('aria-pressed', s==='am');
+    $('slot-pm').setAttribute('aria-pressed', s==='pm');
+  }
+  function slotFromTime(t){ const h=parseInt(t.slice(0,2),10); return (h>=4 && h<15)?'am':'pm'; }
+  function resetForm(keepDate){
+    const n=new Date();
+    if(!keepDate) $('f-date').value = ymd(n);
+    $('f-time').value = pad(n.getHours())+':'+pad(n.getMinutes());
+    setSlot(slotFromTime($('f-time').value));
+    $('f-sys').value=''; $('f-dia').value=''; $('f-pul').value='';
+    editingId=null; $('edit-hint').textContent=''; $('reset').hidden=true;
+    $('save').textContent='記録する';
+  }
+  $('slot-am').onclick=()=>setSlot('am');
+  $('slot-pm').onclick=()=>setSlot('pm');
+  $('f-time').addEventListener('change',()=>{ if($('f-time').value) setSlot(slotFromTime($('f-time').value)); });
+  $('reset').onclick=()=>{ resetForm(); setMsg(''); };
+
+  function setMsg(t,kind){ const m=$('msg'); m.textContent=t; m.className='msg'+(kind?' '+kind:''); }
+
+  function fillForm(r){
+    $('f-date').value=r.date; $('f-time').value=r.time||'';
+    setSlot(r.slot); $('f-sys').value=r.sys; $('f-dia').value=r.dia; $('f-pul').value=r.pulse ?? '';
+    editingId=r.id; $('edit-hint').textContent=r.date.slice(5).replace('-','/')+' '+SLOT[r.slot]+' を修正中';
+    $('reset').hidden=false; $('save').textContent='修正を保存';
+    setMsg('');
+    $('form').scrollIntoView({behavior:'smooth',block:'start'});
+  }
+
+  $('form').addEventListener('submit', async e=>{
+    e.preventDefault();
+    const date=$('f-date').value, time=$('f-time').value;
+    const sys=+$('f-sys').value, dia=+$('f-dia').value, pulRaw=$('f-pul').value;
+    const pulse = pulRaw==='' ? null : +pulRaw;
+    if(!date) return setMsg('測定日を選んでください。','err');
+    if(!time) return setMsg('時刻を入れてください。','err');
+    if(!(sys>=50&&sys<=260)) return setMsg('上の血圧は 50〜260 の数字で入れてください。','err');
+    if(!(dia>=30&&dia<=180)) return setMsg('下の血圧は 30〜180 の数字で入れてください。','err');
+    if(dia>=sys) return setMsg('下の血圧が上の血圧以上になっています。入れ替わっていないか確認してください。','err');
+    if(pulse!==null && !(pulse>=30&&pulse<=200)) return setMsg('脈拍は 30〜200 の数字で入れてください。','err');
+    const id = date+'_'+slot;
+    const replacing = byKey.has(id) && editingId!==id;
+    const body={date,time,slot,sys,dia,pulse,updatedAt:Date.now()};
+    $('save').disabled=true;
+    try{
+      store.put(id,body);
+      if(editingId && editingId!==id) store.del(editingId);
+      const c=classify(sys,dia);
+      setMsg((replacing?'同じ日の'+SLOT[slot]+'の記録を上書きしました。':'記録しました。')+'（'+CLS[c]+'）','ok');
+      selDate=date; const d=new Date(date+'T00:00'); viewY=d.getFullYear(); viewM=d.getMonth();
+      resetForm(true);
+      $('f-date').value=date;
+      renderCal();
+    }catch(err){
+      setMsg('保存できませんでした。スマホの空き容量を確認してください。','err');
+    }finally{ $('save').disabled=false; }
+  });
+
+  /* ---------- averages ---------- */
+  function renderAvg(){
+    const today=ymd(new Date());
+    const from=new Date(); from.setDate(from.getDate()-6); const f=ymd(from);
+    const html=['am','pm'].map(s=>{
+      const rs=readings.filter(r=>r.slot===s && r.date>=f && r.date<=today);
+      if(!rs.length) return `<div class="avg-card"><span class="k"><i class="dot ${s}"></i>${SLOT[s]}の平均</span><span class="v" style="color:var(--muted)">—/—</span><span class="p">この7日間の記録はまだありません</span></div>`;
+      const a=k=>Math.round(rs.reduce((t,r)=>t+r[k],0)/rs.length);
+      const ps=rs.filter(r=>r.pulse!=null);
+      const ap=ps.length?Math.round(ps.reduce((t,r)=>t+r.pulse,0)/ps.length):null;
+      const S=a('sys'),D=a('dia'),c=classify(S,D);
+      return `<div class="avg-card"><span class="k"><i class="dot ${s}"></i>${SLOT[s]}の平均（${rs.length}回）</span>
+        <span class="v"><span class="s">${S}</span>/<span class="d">${D}</span></span>
+        <span class="p">脈拍 ${ap??'—'}　<span class="pill c${c}">${CLS[c]}</span></span></div>`;
+    }).join('');
+    $('avg').innerHTML=html;
+  }
+
+  /* ---------- calendar ---------- */
+  function renderCal(){
+    $('month-label').textContent=viewY+'年'+(viewM+1)+'月';
+    const first=new Date(viewY,viewM,1), days=new Date(viewY,viewM+1,0).getDate();
+    const today=ymd(new Date());
+    let h=WD.map((w,i)=>`<div class="wd${i===0?' sun':i===6?' sat':''}">${w}</div>`).join('');
+    for(let i=0;i<first.getDay();i++) h+='<div class="day out" aria-hidden="true"></div>';
+    for(let d=1; d<=days; d++){
+      const ds=viewY+'-'+pad(viewM+1)+'-'+pad(d);
+      const wd=(first.getDay()+d-1)%7;
+      const line=s=>{ const r=byKey.get(ds+'_'+s); return r?`<span class="r"><i class="dot ${s}"></i><span class="s">${r.sys}</span>/<span class="d">${r.dia}</span></span>`:''; };
+      const am=byKey.get(ds+'_am'), pm=byKey.get(ds+'_pm');
+      const lab=d+'日'+(am?` 朝 ${am.sys}/${am.dia}`:'')+(pm?` 晩 ${pm.sys}/${pm.dia}`:'');
+      h+=`<button type="button" class="day${ds===today?' today':''}${ds===selDate?' sel':''}" data-d="${ds}" aria-label="${lab}">
+        <span class="dn${wd===0?' sun':wd===6?' sat':''}">${d}</span>${line('am')}${line('pm')}</button>`;
+    }
+    $('cal').innerHTML=h;
+    renderDetail();
+  }
+  $('cal').addEventListener('click',e=>{
+    const b=e.target.closest('.day[data-d]'); if(!b) return;
+    selDate=b.dataset.d; renderCal();
+  });
+  $('prev').onclick=()=>{ viewM--; if(viewM<0){viewM=11;viewY--;} renderCal(); };
+  $('next').onclick=()=>{ viewM++; if(viewM>11){viewM=0;viewY++;} renderCal(); };
+  $('this-month').onclick=()=>{ const n=new Date(); viewY=n.getFullYear(); viewM=n.getMonth(); selDate=ymd(n); renderCal(); };
+
+  let pendingDelete=null;
+  function renderDetail(){
+    const d=new Date(selDate+'T00:00');
+    const title=(d.getMonth()+1)+'月'+d.getDate()+'日（'+WD[d.getDay()]+'）';
+    const recs=['am','pm'].map(s=>{
+      const r=byKey.get(selDate+'_'+s);
+      if(!r) return `<div class="rec"><span class="t"><i class="dot ${s}"></i>${SLOT[s]}</span><span class="empty-line">未記録</span><span></span></div>`;
+      const c=classify(r.sys,r.dia);
+      const del = pendingDelete===r.id
+        ? `<button class="btn small danger" data-act="del-yes" data-id="${r.id}">削除する</button><button class="btn small" data-act="del-no">やめる</button>`
+        : `<button class="btn small" data-act="edit" data-id="${r.id}">修正</button><button class="btn small" data-act="del" data-id="${r.id}" ${canWrite?'':'disabled'}>削除</button>`;
+      return `<div class="rec"><span class="t"><i class="dot ${s}"></i>${SLOT[s]} <span class="num">${r.time||''}</span></span>
+        <span class="vals"><span><span class="s">${r.sys}</span>/<span class="d">${r.dia}</span></span><span class="p">脈拍 ${r.pulse??'—'}</span><span class="pill c${c}">${CLS[c]}</span></span>
+        <span class="acts">${del}</span></div>`;
+    }).join('');
+    $('detail').innerHTML=`<div class="detail-head"><b>${title}</b><button class="btn small" data-act="new">この日の記録を入力</button></div>${recs}`;
+  }
+  $('detail').addEventListener('click',async e=>{
+    const b=e.target.closest('button[data-act]'); if(!b) return;
+    const act=b.dataset.act, id=b.dataset.id;
+    if(act==='new'){ resetForm(); $('f-date').value=selDate;
+      const has=byKey.has(selDate+'_am'); if(has && !byKey.has(selDate+'_pm')) setSlot('pm'); else if(!has) setSlot('am');
+      $('form').scrollIntoView({behavior:'smooth',block:'start'}); $('f-sys').focus({preventScroll:true}); }
+    if(act==='edit'){ const r=readings.find(x=>x.id===id); if(r) fillForm(r); }
+    if(act==='del'){ pendingDelete=id; renderDetail(); }
+    if(act==='del-no'){ pendingDelete=null; renderDetail(); }
+    if(act==='del-yes'){
+      pendingDelete=null;
+      try{ store.del(id); if(editingId===id) resetForm(); }
+      catch(_){ setMsg('削除できませんでした。もう一度お試しください。','err'); }
+      renderDetail();
+    }
+  });
+
+  /* ---------- chart ---------- */
+  function segInit(id,cb){
+    $(id).addEventListener('click',e=>{
+      const b=e.target.closest('button[data-v]'); if(!b) return;
+      $(id).querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed', x===b));
+      cb(b.dataset.v); renderChart();
+    });
+  }
+  segInit('range',v=>range=+v);
+  segInit('which',v=>which=v);
+
+  function renderChart(){
+    if(typeof Chart==='undefined') return;
+    let rs=readings.slice();
+    if(range){ const f=new Date(); f.setDate(f.getDate()-(range-1)); const fs=ymd(f); rs=rs.filter(r=>r.date>=fs); }
+    if(which!=='both') rs=rs.filter(r=>r.slot===which);
+    rs.sort((a,b)=>(a.date+(a.slot==='am'?'0':'1')).localeCompare(b.date+(b.slot==='am'?'0':'1')));
+    rs_ref=rs;
+    $('chart-empty').hidden = rs.length>0;
+    const labels=rs.map(r=>{ const [,m,d]=r.date.split('-'); return [+m+'/'+(+d), SLOT[r.slot]]; });
+    const C={sys:css('--sys'),dia:css('--dia'),pul:css('--pulse'),am:css('--am'),pm:css('--pm'),grid:css('--line'),txt:css('--muted'),surf:css('--surface')};
+    const ptBg = rs.map(r=> r.slot==='am'?C.am:C.pm);
+    const base={tension:.25,borderWidth:2,pointRadius:rs.length>60?1.5:3.5,pointHoverRadius:6,pointBorderWidth:1.5,spanGaps:true};
+    const ref=(v,c)=>({label:'_ref',data:rs.map(()=>v),borderColor:c,borderDash:[5,4],borderWidth:1,pointRadius:0,pointHoverRadius:0,fill:false,order:9});
+    const data={labels,datasets:[
+      {...base,label:'上の血圧',data:rs.map(r=>r.sys),borderColor:C.sys,pointBackgroundColor:ptBg,pointBorderColor:C.sys},
+      {...base,label:'下の血圧',data:rs.map(r=>r.dia),borderColor:C.dia,pointBackgroundColor:ptBg,pointBorderColor:C.dia},
+      {...base,label:'脈拍',data:rs.map(r=>r.pulse),borderColor:C.pul,pointBackgroundColor:C.pul,pointBorderColor:C.pul,borderDash:[2,3],hidden:true,yAxisID:'y'},
+      ref(135,C.sys), ref(85,C.dia)
+    ]};
+    if(chart){
+      const hidden=chart.getDatasetMeta(2).hidden;
+      chart.data=data; if(hidden!==null) chart.getDatasetMeta(2).hidden=hidden;
+      Object.assign(chart.options.scales.x.ticks,{color:C.txt}); chart.options.scales.y.ticks.color=C.txt;
+      chart.options.scales.x.grid.color=C.grid; chart.options.scales.y.grid.color=C.grid;
+      chart.options.plugins.legend.labels.color=C.txt;
+      chart.update(); return;
+    }
+    chart=new Chart($('chart'),{type:'line',data,options:{
+      responsive:true,maintainAspectRatio:false,animation:matchMedia('(prefers-reduced-motion: reduce)').matches?false:{duration:300},
+      interaction:{mode:'index',intersect:false},
+      scales:{
+        x:{ticks:{color:C.txt,maxRotation:0,autoSkip:true,autoSkipPadding:10,font:{size:10}},grid:{color:C.grid,drawTicks:false}},
+        y:{suggestedMin:50,suggestedMax:160,ticks:{color:C.txt,stepSize:10,font:{size:10}},grid:{color:C.grid},title:{display:true,text:'mmHg',color:C.txt,font:{size:10}}}
+      },
+      plugins:{
+        legend:{labels:{color:C.txt,usePointStyle:true,pointStyle:'line',boxWidth:24,filter:i=>i.text!=='_ref'}},
+        tooltip:{filter:i=>i.dataset.label!=='_ref',callbacks:{title:it=>{ const r=rs_ref[it[0].dataIndex]; return r?r.date.replace(/-/g,'/')+' '+SLOT[r.slot]+' '+(r.time||''):''; }}}
+      }
+    }});
+  }
+  const mq=matchMedia('(prefers-color-scheme: dark)');
+  const retheme=()=>{ if(chart){ chart.destroy(); chart=null; } renderChart(); };
+  mq.addEventListener && mq.addEventListener('change',retheme);
+  new MutationObserver(retheme).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
+
+  function renderAll(){ renderAvg(); renderCal(); renderChart(); }
+
+  /* ---------- data ---------- */
+  function setStatus(t,err){ const s=$('status'); s.textContent=t; s.className='status'+(err?' err':''); }
+
+  /* ---------- 端末内の保存（localStorage） ---------- */
+  const KEY='ketsuatsu.readings.v1';
+  let storageOk=true;
+  const store={
+    all:{},
+    load(){ try{ this.all=JSON.parse(localStorage.getItem(KEY)||'{}')||{}; }catch(_){ storageOk=false; this.all={}; } },
+    save(){ localStorage.setItem(KEY, JSON.stringify(this.all)); refresh(); },
+    put(id,body){ this.all[id]=body; this.save(); },
+    del(id){ delete this.all[id]; this.save(); },
+  };
+  function refresh(){
+    readings=Object.entries(store.all).map(([id,r])=>({id,...r})).filter(r=>r.date&&r.slot);
+    byKey=new Map(readings.map(r=>[r.id,r]));
+    if(pendingDelete && !byKey.has(pendingDelete)) pendingDelete=null;
+    if(!storageOk) setStatus('このブラウザでは記録を保存できません',true);
+    else setStatus(readings.length?'記録 '+readings.length+' 件':'記録はまだありません');
+    renderAll();
+  }
+  // 別タブで記録した場合も反映
+  window.addEventListener('storage',e=>{ if(e.key===KEY){ store.load(); refresh(); } });
+  // ブラウザに勝手に消されないよう永続保存を依頼
+  try{ navigator.storage && navigator.storage.persist && navigator.storage.persist(); }catch(_){}
+
+  /* ---------- CSV ---------- */
+  function setBk(t,kind){ const m=$('bk-msg'); m.textContent=t; m.className='msg'+(kind?' '+kind:''); }
+  function toCsv(){
+    const rows=readings.slice().sort((a,b)=>a.id.localeCompare(b.id));
+    const lines=['日付,時刻,朝晩,上の血圧,下の血圧,脈拍'];
+    rows.forEach(r=>lines.push([r.date,r.time||'',SLOT[r.slot],r.sys,r.dia,r.pulse??''].join(',')));
+    return '﻿'+lines.join('\r\n')+'\r\n';
+  }
+  function csvFile(){
+    const name='血圧記録_'+ymd(new Date()).replace(/-/g,'')+'.csv';
+    return {name, blob:new Blob([toCsv()],{type:'text/csv'})};
+  }
+  $('exp').onclick=()=>{
+    if(!readings.length) return setBk('書き出す記録がまだありません。','err');
+    const {name,blob}=csvFile();
+    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(a.href),5000);
+    setBk(name+' を書き出しました（ダウンロードフォルダ）。','ok');
+  };
+  try{
+    const probe=new File(['a'],'a.csv',{type:'text/csv'});
+    if(navigator.canShare && navigator.canShare({files:[probe]})) $('share').hidden=false;
+  }catch(_){}
+  $('share').onclick=async()=>{
+    if(!readings.length) return setBk('共有する記録がまだありません。','err');
+    const {name,blob}=csvFile();
+    try{ await navigator.share({files:[new File([blob],name,{type:'text/csv'})],title:name}); setBk('共有しました。','ok'); }
+    catch(e){ if(e && e.name!=='AbortError') setBk('共有できませんでした。「CSVを書き出す」をお使いください。','err'); }
+  };
+  let pendingImport=null;
+  $('imp').onclick=()=>$('imp-file').click();
+  $('imp-file').onchange=async()=>{
+    const f=$('imp-file').files[0]; $('imp-file').value=''; if(!f) return;
+    const text=(await f.text()).replace(/^﻿/,'');
+    const out={}; let bad=0;
+    text.split(/\r?\n/).forEach((ln,i)=>{
+      if(!ln.trim()) return;
+      const c=ln.split(',').map(s=>s.trim().replace(/^"|"$/g,''));
+      if(i===0 && !/^\d{4}-\d{2}-\d{2}$/.test(c[0])) return; // 見出し行
+      const date=c[0].replace(/\//g,'-').replace(/^(\d{4})-(\d)-/,'$1-0$2-').replace(/-(\d)$/,'-0$1');
+      const slot=c[2]==='朝'||c[2]==='am'?'am':c[2]==='晩'||c[2]==='pm'?'pm':null;
+      const sys=+c[3], dia=+c[4], pulse=c[5]===''||c[5]==null?null:+c[5];
+      if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||!slot||!(sys>0)||!(dia>0)){ bad++; return; }
+      out[date+'_'+slot]={date,time:c[1]||'',slot,sys,dia,pulse:Number.isFinite(pulse)?pulse:null,updatedAt:Date.now()};
+    });
+    const n=Object.keys(out).length;
+    if(!n){ setBk('読み込める記録が見つかりませんでした。このアプリで書き出したCSVを選んでください。','err'); return; }
+    const dup=Object.keys(out).filter(k=>store.all[k]).length;
+    pendingImport=out;
+    $('imp-text').textContent=`${n}件を取り込みます`+(dup?`（うち${dup}件は同じ日・朝晩の記録を上書き）`:'')+(bad?`。読めない行が${bad}行ありました`:'')+'。';
+    $('imp-confirm').hidden=false; setBk('');
+  };
+  $('imp-no').onclick=()=>{ pendingImport=null; $('imp-confirm').hidden=true; };
+  $('imp-yes').onclick=()=>{
+    if(!pendingImport) return;
+    const n=Object.keys(pendingImport).length;
+    try{ Object.assign(store.all,pendingImport); store.save(); setBk(n+'件を取り込みました。','ok'); }
+    catch(_){ setBk('取り込めませんでした。','err'); }
+    pendingImport=null; $('imp-confirm').hidden=true;
+  };
+
+  resetForm();
+  store.load();
+  refresh();
+
+  if('serviceWorker' in navigator && (location.protocol==='https:'||location.hostname==='localhost'||location.hostname==='127.0.0.1')){
+    navigator.serviceWorker.register('sw.js').catch(()=>{});
+  }
+})();
+</script>
+</body>
+</html>
